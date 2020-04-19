@@ -4,7 +4,7 @@ import os
 import sys
 import uuid
 import time
-from botocore.vendored import requests
+import requests
 
 ES_HOST = 'https://vpc-photos-rsjxyzqwdjlisyiem3w4iwldya.us-east-1.es.amazonaws.com'
 REGION = 'us-east-1'
