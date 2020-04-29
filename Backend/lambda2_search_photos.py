@@ -6,117 +6,147 @@ import uuid
 import time
 import requests
 
+# https://github.com/NikhilNar/PhotoAlbum/blob/3648e5e3bdb910fcee084abcc2497ea64a43537c/lambda-functions/image_search.py
+# https://github.com/ayush159/NLP-Controlled-Photo-Album/blob/master/LambdaFunctions/search-photos.py
+# https://github.com/hisenberg08/aws-photo-search-app/blob/master/search-elastic.py
+# https://github.com/MercuryTian/AWS-AI-Photo-Album-Web-Application/blob/master/Lambda/search-photos.py
+
 ES_HOST = 'https://vpc-photos-rsjxyzqwdjlisyiem3w4iwldya.us-east-1.es.amazonaws.com'
 REGION = 'us-east-1'
+BOT_NAME = 'photo_searcher'
+BOT_ALIAS = 'photo_searcher'
+S3_BUCKET = 'photos-s3-bucket'
+HEADERS = {"Content-Type": "application/json"}
+LEX_USER_ID = 'user'
 
+ES_INDEX = 'photos'
+ES_TYPE = 'Photo'
 
-def get_url(es_index, es_type, keyword):
-    url = ES_HOST + '/' + es_index + '/' + es_type + '/_search?q=' + keyword.lower()
-    return url
+S3_VOICE = 'test.mp3'
+S3_TEXT = 'test.txt'
 
-def lambda_handler(event, context):
-	# recieve from API Gateway
-	print("EVENT --- {}".format(json.dumps(event)))
-	
-	headers = { "Content-Type": "application/json" }
-	lex = boto3.client('lex-runtime')
+transcribe_client = boto3.client('transcribe')
+lex_client = boto3.client('lex-runtime')
+s3_client = boto3.client('s3')
 
-	query = event["queryStringParameters"]["q"]
-	
-	if query == "voiceSearch":
-		transcribe = boto3.client('transcribe')
-		job_name = time.strftime("%a %b %d %H:%M:%S %Y", time.localtime()).replace(":", "-").replace(" ", "")
-		job_uri = "https://s3.amazonaws.com/cc3-voices/test.mp3"
-		transcribe.start_transcription_job(
-		    TranscriptionJobName=job_name,
-		    Media={'MediaFileUri': job_uri},
-		    MediaFormat='mp3',
-		    LanguageCode='en-US'
-		)
-		while True:
-		    status = transcribe.get_transcription_job(TranscriptionJobName=job_name)
-		    if status['TranscriptionJob']['TranscriptionJobStatus'] in ['COMPLETED', 'FAILED']:
-		        break
-		    print("Not ready yet...")
-		    time.sleep(5)
-		print("Transcript URL: ", status)
-		transcriptURL = status['TranscriptionJob']['Transcript']['TranscriptFileUri']
-		trans_text = requests.get(transcriptURL).json()
-		
-		print("Transcripts: ", trans_text)
-		print(trans_text["results"]['transcripts'][0]['transcript'])
-		
-		s3client = boto3.client('s3')
-		response = s3client.delete_object(
-		    Bucket='cc3-voices',
-		    Key='test.mp3'
-		)
-		query = trans_text["results"]['transcripts'][0]['transcript']
-		s3client.put_object(Body=query, Bucket='cc3-voices', Key='test.txt')
-		return {
-			'statusCode': 200,
-			'headers': {
-				"Access-Control-Allow-Origin": "*"
-			},
-			'body': "transcribe done"
-		}
-	
-	if query == "voiceResult":
-		s3client = boto3.client('s3')
-		data = s3client.get_object(Bucket='cc3-voices', Key='test.txt')
-		query = data.get('Body').read().decode('utf-8')
-		print("Voice query: ", query)
-		s3client.delete_object(
-			Bucket='cc3-voices',
-			Key='test.txt'
-		)
-	
+def get_url(tag):
+	url = ES_HOST + '/' + ES_INDEX + '/' + ES_TYPE + '/_search?q=' + tag.lower()
+	print('get url:', url)
+	return url
 
-	lex_response = lex.post_text(
-		botName='PhotoAlbum',
-		botAlias='photoalbum',
-		userId='kelly',
+def get_slots(query):
+	print('get_slots: query:{}'.format(query))
+	lex_response = lex_client.post_text(
+		botName=BOT_NAME,
+		botAlias=BOT_ALIAS,
+		userId=LEX_USER_ID,
 		inputText=query
 	)
-	
-	print("LEX RESPONSE --- {}".format(json.dumps(lex_response)))
+	print('get_slots: Lex RESPONSE --- {}'.format(json.dumps(lex_response)))
+	if 'slots' in lex_response.keys():
+		res = lex_response['slots'], True
+	else:
+		res = {}, False
+	return res
 
-	slots = lex_response['slots']
+def get_response(code, body):
+	response = {
+		'statusCode': code,
+		'headers': {
+			'Content-Type': 'application/json',
+			'Access-Control-Allow-Origin': '*',
+			'Access-Control-Allow-Methods': 'GET, POST, PUT',
+			'Access-Control-Allow-Headers': 'Content-Type'
+		},
+		'body': json.dumps(body),
+		'isBase64Encoded': False
+	}
+	print('get_response:', response)
+	return response
 
+def search_intent(slots):
 	img_list = []
 	for i, tag in slots.items():
 		if tag:
-			url = get_url('photos', 'Photo', tag)
-			print("ES URL --- {}".format(url))
+			url = get_url(tag)
+			print('ES URL --- {}'.format(url))
 
-			es_response = requests.get(url, headers=headers).json()
-			print("ES RESPONSE --- {}".format(json.dumps(es_response)))
+			es_response = requests.get(url, headers=HEADERS).json()
+			print('ES RESPONSE --- {}'.format(json.dumps(es_response)))
 
-			es_src = es_response['hits']['hits']
-			print("ES HITS --- {}".format(json.dumps(es_src)))
+			if 'hits' in es_response:
+				es_src = es_response['hits']['hits']
+				print('ES HITS --- {}'.format(json.dumps(es_src)))
+				objKeys = set()
+				for photo in es_src:
+					labels = [obj.lower() for obj in photo['_source']['labels']]
+					if tag.lower() in labels:
+						objKey = photo['_source']['objectKey']
+						if objKey not in objKeys:
+							objKeys.add(objKey)
+							img_url = 'https://' + S3_BUCKET + '.s3.amazonaws.com/' + objKey
+							img_list.append(img_url)
+	return img_list
 
-			for photo in es_src:
-				labels = [word.lower() for word in photo['_source']['labels']]
-				if tag in labels:
-					objectKey = photo['_source']['objectKey']
-					img_url = 'https://s3.amazonaws.com/cc3-photos/' + objectKey
-					img_list.append(img_url)
 
+def lambda_handler(event, context):
+	# recieve from API Gateway
+	print('EVENT --- {}'.format(json.dumps(event)))
+	queryParam = event['queryStringParameters']
+	if not queryParam:
+		return get_response(400, 'Bad request, nothing in query params.')
+	query = queryParam['q']
+
+	print('Query String Parameters:', query)
+
+	if query == 'voiceSearch':
+		job_name = time.strftime('%a %b %d %H:%M:%S %Y', time.localtime()).replace(':', '-').replace(' ', '')
+		job_uri = 'https://s3.amazonaws.com/' + S3_BUCKET + '/' + S3_VOICE
+		transcribe_client.start_transcription_job(
+			TranscriptionJobName=job_name,
+			Media={'MediaFileUri': job_uri},
+			MediaFormat='mp3',
+			LanguageCode='en-US',
+			OutputBucketName=S3_BUCKET
+		)
+		while True:
+			status = transcribe_client.get_transcription_job(TranscriptionJobName=job_name)
+			if status['TranscriptionJob']['TranscriptionJobStatus'] in ['COMPLETED', 'FAILED']:
+				break
+			print('Transcription not ready yet.')
+			time.sleep(5)
+		print('Transcript URL: ', status)
+		transcriptURL = status['TranscriptionJob']['Transcript']['TranscriptFileUri']
+		trans_text = requests.get(transcriptURL).json()
+		
+		print('Transcripts: ', trans_text)
+		print(trans_text['results']['transcripts'][0]['transcript'])
+		
+		response = s3_client.delete_object(
+			Bucket=S3_BUCKET,
+			Key=S3_VOICE
+		)
+		query = trans_text['results']['transcripts'][0]['transcript']
+		s3_client.put_object(Body=query, Bucket=S3_BUCKET, Key=S3_TEXT)
+		return get_response(200, 'Transcribe completed.')
+	
+	if query == 'voiceResult':
+		data = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_TEXT)
+		query = data.get('Body').read().decode('utf-8')
+		# data_decode = data.get()['Body'].read().decode('utf-8').replace("'", '"')
+		# query = json.loads(data_decode)['results']['transcripts'][0]['transcript']
+		print('Voice query: ', query)
+		s3_client.delete_object(
+			Bucket=S3_BUCKET,
+			Key=S3_TEXT
+		)
+	
+	slots, valid = get_slots(query)
+	if not valid:
+		get_response(200, 'Lex does not comprehend.')
+	img_list = search_intent(slots)
+	print('img_list:{}'.format(img_list))
 	if img_list:
-		return {
-			'statusCode': 200,
-			'headers': {
-				"Access-Control-Allow-Origin": "*",
-				'Content-Type': 'application/json'
-			},
-			'body': json.dumps(img_list)
-		}
+		return get_response(200, img_list)
 	else:
-		return {
-			'statusCode': 200,
-			'headers': {
-				"Access-Control-Allow-Origin": "*",
-				'Content-Type': 'application/json'
-			},
-			'body': json.dumps("No such photos.")
-		}
+		return get_response(200, 'No photos matching the keyword.')
