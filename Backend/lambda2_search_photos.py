@@ -88,6 +88,47 @@ def search_intent(slots):
 							img_list.append(img_url)
 	return img_list
 
+def trans_voice():
+	job_name = time.strftime('%a %b %d %H:%M:%S %Y', time.localtime()).replace(':', '-').replace(' ', '')
+	job_uri = 'https://s3.amazonaws.com/' + S3_BUCKET + '/' + S3_VOICE
+	transcribe_client.start_transcription_job(
+		TranscriptionJobName=job_name,
+		Media={'MediaFileUri': job_uri},
+		MediaFormat='mp3',
+		LanguageCode='en-US',
+		OutputBucketName=S3_BUCKET
+	)
+	while True:
+		status = transcribe_client.get_transcription_job(TranscriptionJobName=job_name)
+		if status['TranscriptionJob']['TranscriptionJobStatus'] in ['COMPLETED', 'FAILED']:
+			break
+		print('Transcription not ready yet.')
+		time.sleep(5)
+	print('Transcript URL: ', status)
+	transcriptURL = status['TranscriptionJob']['Transcript']['TranscriptFileUri']
+	trans_text = requests.get(transcriptURL).json()
+		
+	print('Transcripts: ', trans_text)
+	print(trans_text['results']['transcripts'][0]['transcript'])
+		
+	response = s3_client.delete_object(
+		Bucket=S3_BUCKET,
+		Key=S3_VOICE
+	)
+	query = trans_text['results']['transcripts'][0]['transcript']
+	s3_client.put_object(Body=query, Bucket=S3_BUCKET, Key=S3_TEXT)
+	
+def get_text():
+	data = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_TEXT)
+	query = data.get('Body').read().decode('utf-8')
+	# data_decode = data.get()['Body'].read().decode('utf-8').replace("'", '"')
+	# query = json.loads(data_decode)['results']['transcripts'][0]['transcript']
+	print('Voice query: ', query)
+	s3_client.delete_object(
+		Bucket=S3_BUCKET,
+		Key=S3_TEXT
+	)
+	return query
 
 def lambda_handler(event, context):
 	# recieve from API Gateway
@@ -97,49 +138,15 @@ def lambda_handler(event, context):
 		return get_response(400, 'Bad request, nothing in query params.')
 	query = queryParam['q']
 
-	print('Query String Parameters:', query)
+	print('query string parameters:', query)
 
 	if query == 'voiceSearch':
-		job_name = time.strftime('%a %b %d %H:%M:%S %Y', time.localtime()).replace(':', '-').replace(' ', '')
-		job_uri = 'https://s3.amazonaws.com/' + S3_BUCKET + '/' + S3_VOICE
-		transcribe_client.start_transcription_job(
-			TranscriptionJobName=job_name,
-			Media={'MediaFileUri': job_uri},
-			MediaFormat='mp3',
-			LanguageCode='en-US',
-			OutputBucketName=S3_BUCKET
-		)
-		while True:
-			status = transcribe_client.get_transcription_job(TranscriptionJobName=job_name)
-			if status['TranscriptionJob']['TranscriptionJobStatus'] in ['COMPLETED', 'FAILED']:
-				break
-			print('Transcription not ready yet.')
-			time.sleep(5)
-		print('Transcript URL: ', status)
-		transcriptURL = status['TranscriptionJob']['Transcript']['TranscriptFileUri']
-		trans_text = requests.get(transcriptURL).json()
-		
-		print('Transcripts: ', trans_text)
-		print(trans_text['results']['transcripts'][0]['transcript'])
-		
-		response = s3_client.delete_object(
-			Bucket=S3_BUCKET,
-			Key=S3_VOICE
-		)
-		query = trans_text['results']['transcripts'][0]['transcript']
-		s3_client.put_object(Body=query, Bucket=S3_BUCKET, Key=S3_TEXT)
+		print('voiceSearch: starting trans voice to text.')
+		trans_voice()
 		return get_response(200, 'Transcribe completed.')
-	
 	if query == 'voiceResult':
-		data = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_TEXT)
-		query = data.get('Body').read().decode('utf-8')
-		# data_decode = data.get()['Body'].read().decode('utf-8').replace("'", '"')
-		# query = json.loads(data_decode)['results']['transcripts'][0]['transcript']
-		print('Voice query: ', query)
-		s3_client.delete_object(
-			Bucket=S3_BUCKET,
-			Key=S3_TEXT
-		)
+		print('voiceResult: getting text transcribed.')
+		query = get_text()
 	
 	slots, valid = get_slots(query)
 	if not valid:
