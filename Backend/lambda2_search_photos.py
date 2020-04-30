@@ -11,7 +11,7 @@ import requests
 # https://github.com/hisenberg08/aws-photo-search-app/blob/master/search-elastic.py
 # https://github.com/MercuryTian/AWS-AI-Photo-Album-Web-Application/blob/master/Lambda/search-photos.py
 
-ES_HOST = 'https://vpc-photos-rsjxyzqwdjlisyiem3w4iwldya.us-east-1.es.amazonaws.com'
+ES_HOST = 'https://vpc-photos-xllcimkwckbd67opw6tymh3uaq.us-east-1.es.amazonaws.com'
 REGION = 'us-east-1'
 BOT_NAME = 'photo_searcher'
 BOT_ALIAS = 'photo_searcher'
@@ -29,8 +29,8 @@ transcribe_client = boto3.client('transcribe')
 lex_client = boto3.client('lex-runtime')
 s3_client = boto3.client('s3')
 
-def get_url(tag):
-	url = ES_HOST + '/' + ES_INDEX + '/' + ES_TYPE + '/_search?q=' + tag.lower()
+def get_url(key):
+	url = ES_HOST + '/' + ES_INDEX + '/' + ES_TYPE + '/_search?q=' + key.lower()
 	print('get url:', url)
 	return url
 
@@ -43,6 +43,7 @@ def get_slots(query):
 		inputText=query
 	)
 	print('get_slots: Lex RESPONSE --- {}'.format(json.dumps(lex_response)))
+	# res = lex_response['currentIntent']['slots']
 	if 'slots' in lex_response.keys():
 		res = lex_response['slots'], True
 	else:
@@ -66,6 +67,7 @@ def get_response(code, body):
 
 def search_intent(slots):
 	img_list = []
+	print('search intent, slots: {}'.format(slots))
 	for i, tag in slots.items():
 		if tag:
 			url = get_url(tag)
@@ -86,11 +88,14 @@ def search_intent(slots):
 							objKeys.add(objKey)
 							img_url = 'https://' + S3_BUCKET + '.s3.amazonaws.com/' + objKey
 							img_list.append(img_url)
+	print('img_list: {}'.format(img_list))
 	return img_list
 
 def trans_voice():
+	print('transcribe voice to text')
 	job_name = time.strftime('%a %b %d %H:%M:%S %Y', time.localtime()).replace(':', '-').replace(' ', '')
 	job_uri = 'https://s3.amazonaws.com/' + S3_BUCKET + '/' + S3_VOICE
+	print('trans job uri', job_uri)
 	transcribe_client.start_transcription_job(
 		TranscriptionJobName=job_name,
 		Media={'MediaFileUri': job_uri},
@@ -119,6 +124,7 @@ def trans_voice():
 	s3_client.put_object(Body=query, Bucket=S3_BUCKET, Key=S3_TEXT)
 	
 def get_text():
+	print('get text from S3')
 	data = s3_client.get_object(Bucket=S3_BUCKET, Key=S3_TEXT)
 	query = data.get('Body').read().decode('utf-8')
 	# data_decode = data.get()['Body'].read().decode('utf-8').replace("'", '"')
