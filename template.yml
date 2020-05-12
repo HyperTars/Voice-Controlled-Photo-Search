@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Outputs the time
+Resources:
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda1_index_photos.lambda_handler
+      Runtime: python3.8
+      CodeUri: ./Backend/
+      FunctionName: "index_photo"
+  Function2:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda2_search_photos.lambda_handler
+      Runtime: python3.8
+      CodeUri: ./Backend/
+      FunctionName: "search-photos"

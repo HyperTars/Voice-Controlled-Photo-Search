@@ -1,0 +1,16 @@
+version: 0.0
+Resources:
+    - index-photofunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Name: "index-photo"
+            Alias: "staging"
+            CurrentVersion: "2"
+            TargetVersion: "3"
+    - voicelambda2function:
+        Type: AWS::Lambda::Function
+        Properties:
+            Name: "voice_lambda2"
+            Alias: "staging"
+            CurrentVersion: "2"
+            TargetVersion: "3"

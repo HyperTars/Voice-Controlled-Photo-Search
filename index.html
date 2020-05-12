@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Photo Search</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <style>
+        body {
+            min-height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="light-blue lighten-1" role="navigation">
+        <div class="nav-wrapper container">
+            <a href class="brand-logo"><i class="material-icons left">cloud</i></a>
+            <ul class="right">
+                <li>
+                    <a class="modal-trigger" data-target="uploadModal"><i class="material-icons left">add_photo_alternate</i>New Photo</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="section">
+            <h1 class="header center orange-text">Photo Search</h1>
+        </div>
+        <form class="section" id="qForm" method="GET">
+            <div class="row">
+                <div class="col s12 m8 offset-m2">
+                    <div id="searchWrapper">
+                        <div class="input-field">
+                            <input id="search" type="search" required autocomplete="off">
+                            <label class="label-icon" for="search"><i class="material-icons">search</i></label>
+                            <i class="material-icons" style="font-size: 24px;" id="voiceIcon"></i>
+                            <style>
+                                #voiceIcon.recording::after {
+                                    color: red;
+                                    animation: blinker 1s linear infinite;
+                                    content: 'fiber_manual_record';
+                                }
+
+                                #voiceIcon::after {
+                                    content: 'keyboard_voice';
+                                }
+
+                                @keyframes blinker {
+                                    50% {
+                                        opacity: 0;
+                                    }
+                                }
+                            </style>
+                        </div>
+                    </div>
+                    <style>
+                        #searchWrapper {
+                            box-shadow: 0 1px 6px 0 rgba(32, 33, 36, .28);
+                            box-sizing: border-box;
+                            padding: 1px;
+                        }
+
+                        #searchWrapper input[type="search"] {
+                            height: inherit;
+                            padding-left: 4rem;
+                            width: calc(100% - 4rem);
+                            border: 0;
+                            box-shadow: none;
+                        }
+                    </style>
+                    <div style="position: relative;">
+                        <div style="position: absolute; right: 0;" class="switch tooltipped" data-tooltip="Speech Recognition Provider&lt;br&gt;aws: Amazon Transcribe&lt;br&gt;local: browser built-in">
+                            <label>
+                                aws
+                                <input id="recognitionProviderCheckbox" type="checkbox" checked>
+                                <span class="lever"></span>
+                                local
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s12 center">
+                    <button class="btn-large waves-effect waves-light orange" type="submit">Go</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="container">
+        <div id="albumContainer" class="section">
+        </div>
+        <style>
+            #albumContainer {
+                display: flex;
+                flex-wrap: wrap;
+            }
+
+            #albumContainer>a {
+                position: relative;
+                margin: 0;
+                height: 20vh;
+                flex-grow: 1;
+                max-width: 100%;
+                overflow: hidden;
+            }
+
+            #albumContainer>a:last-child {
+                flex-grow: 10;
+            }
+
+            #albumContainer>a>img {
+                max-height: 100%;
+                min-width: 100%;
+                object-fit: cover;
+                vertical-align: bottom;
+            }
+
+            #albumContainer>a>div.album-caption {
+                color: #fff;
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                max-width: 100%;
+                padding: 24px;
+                font-size: 24px;
+                font-weight: 300;
+                text-shadow: 0 0 5px black;
+            }
+        </style>
+    </div>
+
+    <div id="uploadModal" class="modal">
+        <form method="PUT">
+            <div class="modal-content">
+                <h4>New Photo</h4>
+                <div class="section">
+                    <div class="file-field input-field">
+                        <div class="btn">
+                            <span>Browse</span>
+                            <input id="uploadInput" type="file" accept="image/*" multiple required>
+                        </div>
+                        <div class="file-path-wrapper">
+                            <input class="file-path validate" type="text" placeholder="Upload Photo">
+                        </div>
+                    </div>
+                    <div>
+                        You may also drag and drop image files here.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div>
+                    <button class="btn-flat modal-close waves-effect waves-light">Cancel</button>
+                    <button class="btn waves-effect waves-light">Upload</button>
+                </div>
+            </div>
+            <div class="progress hide" style="position: absolute; top: 0;">
+                <div class="indeterminate"></div>
+            </div>
+        </form>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="hands-free-transcribe-scripts/Script_TranscribeStreaming_GLOBAL.js"></script>
+    <script src="hands-free-transcribe-scripts/Script_TranscribeStreaming.js"></script>
+    <script>
+        const config = {
+            apiEndpoint: 'https://nnaqel8ok7.execute-api.us-east-1.amazonaws.com/beta',
+            apiKey: 'na8gNVwUQA3mCuM3wfumR6RtrPxAgvoT9NZ9XIyD',
+            accessKeyId: 'AKIASS7H56KCEPY7WVCQ',
+            secretAccessKey: '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',
+        };
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        const voiceIcon = document.getElementById('voiceIcon');
+        const recognitionProviderCheckbox = document.getElementById('recognitionProviderCheckbox');
+        const qForm = document.getElementById('qForm');
+        const search = document.getElementById('search');
+        const albumContainer = document.getElementById('albumContainer');
+        const uploadInput = document.getElementById('uploadInput');
+
+        AutoInit: {
+            M.AutoInit();
+        }
+
+        voiceIcon: {
+            const keywords = ['cat', 'dog', 'bird', 'tree'];
+
+            const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+            const SpeechGrammarList = window.SpeechGrammarList ?? window.webkitSpeechGrammarList;
+
+            const grammar = `#JSGF V1.0; grammar keywords; public <keywords> = ${keywords.join(' | ')} ;`;
+            const speechRecognitionList = new SpeechGrammarList();
+            speechRecognitionList.addFromString(grammar);
+
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.grammars = speechRecognitionList;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+            recognition.maxAlternatives = 1;
+            recognition.onresult = ({ results }) => search.value = Array.prototype.map.call(results, (([{ transcript }]) => transcript)).join(' ');
+            recognition.onstart = recognition.onend = () => voiceIcon.classList.toggle('recording');
+
+            const awsClient = new TranscribeStreaming('us-east-1', { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey });
+
+            voiceIcon.onclick = async () => {
+                if (recognitionProviderCheckbox.checked) {
+                    return recognition.start();
+                }
+                else {
+                    const microphone = new Microphone(
+                        await navigator.mediaDevices.getUserMedia({ audio: true }),
+                        ({ inputBuffer }) => awsClient.sendData(inputBuffer.getChannelData(0)),
+                    );
+
+
+                    awsClient.openSocket(
+                        () => {
+                            microphone.startRecording();
+                            voiceIcon.classList.add('recording');
+                        },
+                        (isPartial, transcript) => {
+                            search.value = transcript;
+                            if (!isPartial) {
+                                voiceIcon.classList.remove('recording');
+                                microphone.stopRecording();
+                                awsClient.closeSocket();
+                            }
+                        },
+                        console.error,
+                    );
+                }
+            }
+        }
+
+        qForm: {
+            qForm.onsubmit = async e => {
+                e.preventDefault();
+                // const json = await fetch('https://cors-anywhere.herokuapp.com/https://pastebin.com/raw/MKUNUTpw')
+                const json = await fetch(`${config.apiEndpoint}/search?q=${encodeURIComponent(search.value)}`, { headers: { 'x-api-key': config.apiKey } })
+                    .then(json => json.json()).catch(() => { });
+                if (Array.isArray(json)) {
+                    albumContainer.innerHTML = json.map(href => `
+                        <a href="${encodeURI(href)}" target="_blank">
+                            <img src="${encodeURI(href)}">
+                            <div class="album-caption">${href.match(/([^\/]+)\.[^\.]+$/)?.[1] ?? ''}</div>
+                        </a>
+                    `).join('') + '<a></a>';
+                }
+                else if (typeof json === 'string' && json.endsWith('no photos matching the keyword.')) {
+                    M.toast({ html: 'No photo matching the keyword' });
+                }
+                else {
+                    M.toast({ html: 'Something wrong' });
+                }
+            }
+        }
+
+        uploadModal: {
+            document.body.addEventListener('dragover', e => e.preventDefault());
+            document.body.addEventListener('drop', e => {
+                if (!e.dataTransfer?.files?.length) return;
+                e.preventDefault();
+
+                M.Modal.getInstance(document.getElementById('uploadModal')).open();
+                uploadInput.files = e.dataTransfer?.files;
+                uploadModal.getElementsByClassName('progress')[0].classList.add('hide');
+                uploadInput.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            uploadModal.onsubmit = async e => {
+                e.preventDefault();
+
+                uploadModal.getElementsByClassName('progress')[0].classList.remove('hide');
+                await Promise.all([...uploadInput.files].map(body => fetch(`${config.apiEndpoint}/upload/${encodeURIComponent(body.name)}`, {
+                    method: 'PUT',
+                    body,
+                    headers: { 'x-api-key': config.apiKey },
+                })));
+                uploadModal.getElementsByClassName('progress')[0].classList.add('hide');
+                M.Modal.getInstance(uploadModal).close();
+                M.toast({ html: 'Upload success' });
+            }
+        }
+    </script>
+</body>
+
+</html>
