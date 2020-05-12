@@ -1,0 +1,14 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+        python: 3.x
+  build:
+    commands:
+      - export BUCKET=codepipeline-us-east-1-916579449910
+      - aws cloudformation package --template-file template.yml --s3-bucket $BUCKET --output-template-file outputtemplate.yml
+artifacts:
+  files:
+    - appspec.yml
+    - template.yml
+    - outputtemplate.yml
