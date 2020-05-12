@@ -15,4 +15,4 @@ Resources:
       Handler: voice_lambda2.lambda_handler
       Runtime: python3.8
       CodeUri: ./Backend/lambda2_search_photos.py
-      FunctionName: "voice_lambda2"
+      FunctionName: "search-photos"
