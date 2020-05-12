@@ -140,6 +140,7 @@ def get_text():
 def plural(word):
 	if word.endswith('s'):
 		return word[:-1]
+	return word
 
 def lambda_handler(event, context):
 	# recieve from API Gateway
