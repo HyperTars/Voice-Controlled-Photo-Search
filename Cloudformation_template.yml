@@ -1,0 +1,549 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: A template for photo album app
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: my-photo-bucket0
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      LoggingConfiguration: 
+        DestinationBucketName: codepipeline-cloudtrail-placeholder-bucket-us-east-1
+      VersioningConfiguration: 
+        Status: Enabled
+    
+  S3Bucketphotos:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: photos-s3-bucket
+
+  S3Bucketcodepipeline:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: codepipeline-us-east-1-916579449910 
+
+  PhotobucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: photos-s3-bucket
+      PolicyDocument: {
+        "Version": "2012-10-17",
+        "Id": "Policy1588353291013",
+        "Statement": [
+          {
+            "Sid": "Stmt1588353263897",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::photos-s3-bucket/*"
+          }
+        ]
+      }
+
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: AI Photo Search
+      Description: AI Photo Search application, built during the Cloud and Big Data course 
+
+  APIStage:
+    Type: AWS::ApiGateway::Stage
+    Properties: 
+      AccessLogSetting: 
+        DestinationArn: arn:aws:logs:us-east-1:178190676612:log-group:acc
+        Format: $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId
+      RestApiId: !Ref RestApi
+      StageName: beta
+
+  Photo:
+    Type: AWS::ApiGateway::Model
+    Properties: 
+      ContentType: objcet
+      Description: Photo model
+      Name: Photo
+      RestApiId: !Ref RestApi
+      Schema: 
+        url:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+
+  SearchResponse:
+    Type: AWS::ApiGateway::Model
+    Properties: 
+      ContentType: objcet
+      Description: SearchResponse model
+      Name: SearchResponse
+      RestApiId: !Ref RestApi
+      Schema: 
+        results:
+          type: array
+          items: !Ref Photo
+        
+  Error:
+    Type: AWS::ApiGateway::Model
+    Properties: 
+      ContentType: objcet
+      Description: Error model
+      Name: Error
+      RestApiId: !Ref RestApi
+      Schema: 
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string 
+
+  SearchParameter:
+    Type: AWS::ApiGateway::Model
+    Properties: 
+      ContentType: objcet
+      Description: SearchParameter model
+      Name: q
+      RestApiId: !Ref RestApi
+      Schema: 
+        type: string
+
+  searchmethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: True
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: "GET"
+        Type: "AWS_PROXY"
+        Uri: "arn:aws:lambda:us-east-1:lambda:/2015-03-31/functions/arn:aws:lambda:us-east-1:178190676612:function:search-photos/invocations"
+      MethodResponses: 
+          - 
+            ResponseModels: 
+              application/json: SearchResponse
+            StatusCode: 200
+          - 
+            ResponseModels: 
+              application/json: Error
+            StatusCode: 403
+          - 
+            ResponseModels: 
+              application/json: Error
+            StatusCode: 500
+      RequestParameters: 
+        method.request.path.q: true
+      ResourceId: !GetAtt RestApi.RootResourceId
+      RestApiId: !Ref RestApi
+      
+  uploadmethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: True
+      HttpMethod: PUT
+      Integration:
+        IntegrationHttpMethod: PUT
+        Type: "AWS_PROXY"
+        Uri: "arn:aws:lambda:us-east-1:lambda:/2015-03-31/functions/arn:aws:lambda:us-east-1:178190676612:function:index-photos/invocations"
+      MethodResponses: 
+          -
+            StatusCode: 200
+          -
+            ResponseModels: 
+              application/json: Error
+            StatusCode: 403
+          -
+            ResponseModels: 
+              application/json: Error
+            StatusCode: 500
+      OperationName: uploadPhoto
+      ResourceId: !GetAtt RestApi.RootResourceId
+      RestApiId: !Ref RestApi
+      
+  photoindexlambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Code: 
+          S3Bucket: my-photo-bucket0
+          S3Key: Backend
+      FunctionName: photo-index
+      Handler: lambda1_index_photos.lambda_handler
+      Role: arn:aws:iam::178190676612:role/service-role/index-photos-role-v85kkxtk
+      Runtime: python3.8
+
+  searchphotolambda:
+    Type: AWS::Lambda::Function
+    Properties: 
+      Code: 
+        S3Bucket: my-photo-bucket0
+        S3Key: Backend
+      FunctionName: search-photos
+      Handler: lambda2_search_photos.lambda_handler
+      Role: arn:aws:iam::178190676612:role/service-role/index-photos-role-v85kkxtk
+      Runtime: python3.8
+
+  ElasticSearch:
+    Type: AWS::Elasticsearch::Domain
+    Properties:  
+      DomainName: photos
+  
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties: 
+      Artifacts: 
+        Type: CODEPIPELINE
+      Environment: 
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: registry/repository:aws/codebuild/standard:2.0-20.03.13
+        Type: LINUX_GPU_CONTAINER
+      Name: lambda-pipeline-build
+      QueuedTimeoutInMinutes: 480
+      ServiceRole: arn:aws:iam::178190676612:role/service-role/codebuild-lambda-pipeline-build-service-role
+      Source: 
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 60
+
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties: 
+      ApplicationName: PhotoAlbum
+      ComputePlatform: Server
+
+  CodeDeployGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties: 
+      ApplicationName: PhotoAlbum
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      DeploymentGroupName: MyDemoDeploymentGroup
+      DeploymentStyle: 
+        DeploymentType: IN_PLACE
+      ServiceRoleArn: arn:aws:iam::178190676612:role/CodeDeployServiceRole
+  
+  LambdaCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties: 
+      Name: lambda2pipeline
+      ArtifactStore: 
+        Location: codepipeline-us-east-1-916579449910
+        Type: S3
+      RestartExecutionOnUpdate: True
+      RoleArn: arn:aws:iam::178190676612:role/service-role/AWSCodePipelineServiceRole-us-east-1-lambda-pipeline
+      Stages: 
+        - 
+          Name: Source 
+          Actions: 
+            - 
+              Name: SourceAction
+              ActionTypeId: 
+                Category: Source 
+                Owner: ThirdParty 
+                Version: 1 
+                Provider: GitHub
+              Configuration:
+                Owner: HyperTars
+                Repo: Voice-Controlled-Photo-Search
+                Branch: master
+                OAuthToken: 514b8a54386fd3ad7b20a54c7f097d9030079c05
+              OutputArtifacts:
+                -                
+                  Name: SourceArtifact
+              RunOrder: 1
+        -
+          Name: Build
+          Actions: 
+            - 
+              Name: BuildAction
+              ActionTypeId: 
+                Category: Build 
+                Owner: AWS 
+                Version: 1 
+                Provider: CodeBuild
+              InputArtifacts:
+                -
+                  Name: SourceArtifact
+              OutputArtifacts: 
+                -
+                  Name: BuildArtifact
+              RunOrder: 1
+        -
+          Name: Deploy
+          Actions: 
+            - 
+              Name: DeployAction
+              ActionTypeId: 
+                Category: Build 
+                Owner: AWS 
+                Version: 1 
+                Provider: AWS CloudFormation
+              InputArtifacts:
+                -
+                  Name: BuildArtifact
+              Configuration:
+                ApplicationName: PhotoAlbum
+                DeploymentGroupName: MyDemoDeploymentGroup
+              RunOrder: 1   
+
+  FrontendCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: PhotoAlbumFrontend 
+      ArtifactStore: 
+        Location: my-photo-bucket0
+        Type: S3
+      RestartExecutionOnUpdate: True
+      RoleArn: arn:aws:iam::178190676612:role/service-role/AWSCodePipelineServiceRole-us-east-1-PhotoAlbumFrontend
+      Stages: 
+        - 
+          Name: Source 
+          Actions: 
+            - 
+              Name: SourceAction
+              ActionTypeId: 
+                Category: Source 
+                Owner: ThirdParty 
+                Version: 1 
+                Provider: GitHub
+              Configuration:
+                Owner: HyperTars
+                Repo: Voice-Controlled-Photo-Search
+                Branch: master
+                OAuthToken: 514b8a54386fd3ad7b20a54c7f097d9030079c05
+              OutputArtifacts:
+                -                
+                  Name: SourceArtifact
+              Configuration: 
+                S3Bucket: !Ref S3Bucketcodepipeline
+        -
+          Name: Deploy
+          Actions: 
+            - 
+              Name: DeployAction
+              ActionTypeId: 
+                Category: Build 
+                Owner: AWS 
+                Version: 1 
+                Provider: CodeDeploy
+              InputArtifacts:
+                -
+                  Name: SourceArtifact
+              Configuration:
+                ApplicationName: PhotoAlbum
+                DeploymentGroupName: MyDemoDeploymentGroup
+
+  IndexPhotosRoleV85KkxtkRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: index-photos-role-v85kkxtk
+
+  VoiceLambda2Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Allows Lambda functions to call AWS services on your behalf."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      MaxSessionDuration: 3600
+      RoleName: voice_lambda2
+  
+  AiPhotoSearchRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Allows S3 to call AWS services on your behalf."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "s3.amazonaws.com"
+                - "apigateway.amazonaws.com"
+                - "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      MaxSessionDuration: 3600
+      RoleName: ai_photo_search
+
+  CodeDeployServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Allows CodeDeploy to call AWS services such as Auto Scaling on your behalf."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ""
+            Effect: "Allow"
+            Principal:
+              Service: "codedeploy.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      MaxSessionDuration: 3600
+      RoleName: CodeDeployServiceRole
+
+  CweRoleUsEast1PhotoAlbumFrontend:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: cwe-role-us-east-1-PhotoAlbumFrontend
+  
+  AwsCodePipelineServiceRoleUsEast1PhotoAlbumFrontend:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "codepipeline.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: AWSCodePipelineServiceRole-us-east-1-PhotoAlbumFrontend
+  
+  CweRoleUsEast1LambdaPipeline:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: cwe-role-us-east-1-lambda-pipeline
+
+  CodebuildLambdaPipelineBuildServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "codebuild.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: codebuild-lambda-pipeline-build-service-role
+
+  CfnLambdaPipeline:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Allows CloudFormation to create and manage AWS stacks and resources on your behalf."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ""
+            Effect: "Allow"
+            Principal:
+              Service: "cloudformation.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      MaxSessionDuration: 3600
+      RoleName: cfn-lambd
+  
+  AwsCodePipelineServiceRoleUsEast1LambdaPipeline:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "codepipeline.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: AWSCodePipelineServiceRole-us-east-1-lambda-pipeline
+ 
+  CodeDeployDemoEc2InstanceProfile:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: "Allows EC2 instances to call AWS services on your behalf."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ec2.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      MaxSessionDuration: 3600
+      RoleName: CodeDeployDemo-EC2-Instance-Profile  
+
+  startpipelineexecutionuseast1lambdapipeline:
+    Type: AWS::IAM::Policy
+    Properties: 
+      Groups: 
+        - String
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - codepipeline:StartPipelineExecution
+            Resource:
+            - arn:aws:codepipeline:us-east-1:178190676612:lambda-pipeline
+      PolicyName: start-pipeline-execution-us-east-1-lambda-pipeline
+      Roles: 
+        - cwe-role-us-east-1-lambda-pipeline
+
+  startpipelineexecutionuseast1PhotoAlbumFrontendPolicy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      Groups: 
+        - String
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - codepipeline:StartPipelineExecution
+            Resource:
+              - arn:aws:codepipeline:us-east-1:178190676612:PhotoAlbumFrontend
+      PolicyName: start-pipeline-execution-us-east-1-PhotoAlbumFrontend
+      Roles: 
+        - cwe-role-us-east-1-PhotoAlbumFrontend
+
+  CodeBuildBasePolicylambdapipelinebuild:
+    Type: AWS::IAM::Policy
+    Properties: 
+      Groups: 
+        - String
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - codepipeline:StartPipelineExecution
+            Resource:
+              - arn:aws:codepipeline:us-east-1:178190676612:PhotoAlbumFrontend
+      PolicyName: start-pipeline-execution-us-east-1-PhotoAlbumFrontend
+      Roles: 
+        - cwe-role-us-east-1-PhotoAlbumFrontend
