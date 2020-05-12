@@ -13,8 +13,8 @@ import requests
 
 ES_HOST = 'https://vpc-photos-xllcimkwckbd67opw6tymh3uaq.us-east-1.es.amazonaws.com'
 REGION = 'us-east-1'
-BOT_NAME = 'photo_searcher'
-BOT_ALIAS = 'photo_searcher'
+BOT_NAME = 'ai_search'
+BOT_ALIAS = 'ai_search'
 S3_BUCKET = 'photos-s3-bucket'
 HEADERS = {"Content-Type": "application/json"}
 LEX_USER_ID = 'user'
@@ -67,9 +67,11 @@ def get_response(code, body):
 
 def search_intent(slots):
 	img_list = []
+	objKeys = set()
 	print('search intent, slots: {}'.format(slots))
 	for i, tag in slots.items():
 		if tag:
+			tag = plural(tag)
 			url = get_url(tag)
 			print('ES URL --- {}'.format(url))
 
@@ -79,7 +81,6 @@ def search_intent(slots):
 			if 'hits' in es_response:
 				es_src = es_response['hits']['hits']
 				print('ES HITS --- {}'.format(json.dumps(es_src)))
-				objKeys = set()
 				for photo in es_src:
 					labels = [obj.lower() for obj in photo['_source']['labels']]
 					if tag.lower() in labels:
@@ -136,6 +137,10 @@ def get_text():
 	)
 	return query
 
+def plural(word):
+	if word.endswith('s'):
+		return word[:-1]
+
 def lambda_handler(event, context):
 	# recieve from API Gateway
 	print('EVENT --- {}'.format(json.dumps(event)))
@@ -162,4 +167,5 @@ def lambda_handler(event, context):
 	if img_list:
 		return get_response(200, img_list)
 	else:
-		return get_response(200, 'No photos matching the keyword.')
+		res = 'slots: ' + json.dumps(slots) + ', no photos matching the keyword.'
+		return get_response(200, res)
