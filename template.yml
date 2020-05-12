@@ -7,12 +7,12 @@ Resources:
     Properties:
       Handler: index_photo.lambda_handler
       Runtime: python3.8
-      CodeUri: ./Backend/index-photo.py
+      CodeUri: ./Backend/lambda1_index_photos.py
       FunctionName: “index_photo”
   Function2:
     Type: AWS::Serverless::Function
     Properties:
       Handler: voice_lambda2.lambda_handler
       Runtime: python3.8
-      CodeUri: ./Backend/voice_lambda2.py
+      CodeUri: ./Backend/lambda2_search_photos.py
       FunctionName: “voice_lambda2”
