@@ -1,5 +1,11 @@
 # Voice-Controlled-Photo-Searcher
 
+- Collection: AWS-based serverless cloud applications
+    - [Malika Keller Dining Concierge Chatbot](https://github.com/HyperTars/Malika-Keller-Dining-Concierge-Chatbot)
+    - [Smart Door Authentication System](https://github.com/HyperTars/Smart-Door-Authentication-System)
+    - **[Voice Controlled Photo Search](https://github.com/HyperTars/Voice-Controlled-Photo-Search)**
+    - [Spam Tagging System](https://github.com/HyperTars/Spam-Tagging-System)
+    
 - Voice Controlled Photo Searcher is an AWS-based serverless cloud application that
     - Stores photos in AWS cloud space
     - Photos can be searched using natural language through both text and voice
