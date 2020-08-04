@@ -26,8 +26,8 @@
     - **CodePipeline** to automatically deploy new commits from GitHub
     - **CloudFormation** to formate template that represents all the infrastructure
 
-See full [Instructions](Instruction.pdf)
+- See full [Instructions](Instruction.pdf)
 
-Architecture Diagram
+- Architecture Diagram
 
 ![Architecture](Architecture.png)
