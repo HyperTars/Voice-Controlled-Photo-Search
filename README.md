@@ -34,6 +34,9 @@
 
 - See full [Instructions](Instruction.pdf)
 
+- Frontend interface
+![frontend](photoSearch.png)
+
 - Architecture Diagram
 
 ![Architecture](Architecture.png)
